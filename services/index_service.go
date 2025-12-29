@@ -75,19 +75,26 @@ func (i indexService) FetchUrlsWithVerify() []Item {
 }
 
 func verifyWithUrl(url string) bool {
-	client := &http.Client{
-		Timeout: 5 * time.Second,
-	}
+    client := &http.Client{
+        Timeout: 8 * time.Second,
+        CheckRedirect: func(req *http.Request, via []*http.Request) error {
+            return http.ErrUseLastResponse // 不跟重定向
+        },
+    }
 
-	resp, err := client.Get(url)
-	if err != nil {
-		return false
-	}
-	defer resp.Body.Close()
+    // 优先检查标准 /v2/ 路径
+    testUrls := []string{"https://" + url + "/v2/", "http://" + url + "/v2/", "https://" + url, "http://" + url}
 
-	if resp.StatusCode != http.StatusOK {
-		return false
-	}
-
-	return true
+    for _, u := range testUrls {
+        resp, err := client.Head(u) // 先用 HEAD 更快
+        if err == nil && (resp.StatusCode == 200 || resp.StatusCode == 401 || resp.StatusCode == 301 || resp.StatusCode == 302) {
+            return true
+        }
+        // HEAD 失败再试 GET
+        resp, err = client.Get(u)
+        if err == nil && (resp.StatusCode == 200 || resp.StatusCode == 401 || resp.StatusCode == 301 || resp.StatusCode == 302) {
+            return true
+        }
+    }
+    return false
 }
